@@ -1,0 +1,27 @@
+{
+  "name": "queuectl",
+  "version": "1.0.0",
+  "description": "CLI-based background job queue system with retries, DLQ, and crash recovery using Node.js and MySQL",
+  "main": "src/index.js",
+  "bin": {
+    "queuectl": "./bin/queuectl.js"
+  },
+  "scripts": {
+    "start": "node bin/queuectl.js",
+    "test": "node tests/test_queuectl.js"
+  },
+  "keywords": [
+    "job-queue",
+    "background-jobs",
+    "cli",
+    "queuectl",
+    "mysql",
+    "nodejs"
+  ],
+  "author": "Candidate",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0",
+    "mysql2": "^3.9.0"
+  }
+}
