@@ -8,6 +8,11 @@
 
 ---
 
+## 🎥 CLI Demo Recording
+
+[Link to CLI Demo Video](https://drive.google.com/drive/folders/1SGM4jTSIRQyN5korAs8dbHlFdfVt0cqc?usp=drive_link)
+
+
 ## 🚀 Features
 
 - **CLI-First Contract**: Strict adherence to command interface contract (e.g. `queuectl list --state <state> --json`).
@@ -257,9 +262,3 @@ npm test
 ## 📄 Decisions & Architecture Questions
 
 For detailed answers to the 5 mandatory design questions (atomic locking lines, SIGKILL step-by-step walkthrough, DLQ retry design justification, cross-process signaling, and priority queue evolution), see [DECISIONS.md](file:///Users/prashhh/Desktop/flam%20assignment/DECISIONS.md).
-
----
-
-## 🎥 CLI Demo Recording
-
-[Link to CLI Demo Video](https://drive.google.com/drive/folders/1SGM4jTSIRQyN5korAs8dbHlFdfVt0cqc?usp=drive_link)
