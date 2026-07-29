@@ -262,4 +262,4 @@ For detailed answers to the 5 mandatory design questions (atomic locking lines, 
 
 ## 🎥 CLI Demo Recording
 
-[Link to CLI Demo Video](https://github.com/your-username/queuectl)
+[Link to CLI Demo Video](https://drive.google.com/drive/folders/1SGM4jTSIRQyN5korAs8dbHlFdfVt0cqc?usp=drive_link)
