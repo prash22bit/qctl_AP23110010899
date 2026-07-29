@@ -20,6 +20,120 @@
 
 ---
 
+## 🏗️ Architecture
+
+### System Overview
+
+QueueCTL follows a **multi-process, shared-database** architecture. A single MySQL database acts as the central coordination layer, allowing any number of independent worker processes (across separate terminal sessions or machines) to safely claim and execute jobs without race conditions.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        CLI Interface (bin/queuectl.js)              │
+│          enqueue │ worker start/stop │ list │ status │ dlq │ config  │
+└────────┬─────────────────┬──────────────────────┬───────────────────┘
+         │                 │                      │
+         ▼                 ▼                      ▼
+  ┌─────────────┐  ┌───────────────────┐  ┌────────────────┐
+  │   src/cli.js │  │ src/worker-       │  │   src/db.js    │
+  │  (Commander) │  │  manager.js       │  │ (MySQL Pool +  │
+  └──────┬───────┘  │ (Process Pool)    │  │  Atomic Ops)   │
+         │          └────────┬──────────┘  └───────┬────────┘
+         │                   │                     │
+         │          ┌────────┴──────────┐           │
+         │          │  Worker Processes  │           │
+         │          │ (worker-child.js) │           │
+         │          │  x N processes    │           │
+         │          └────────┬──────────┘           │
+         │                   │                     │
+         └───────────────────┴─────────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   MySQL 8.0+    │
+                    │ ┌─────────────┐ │
+                    │ │  jobs table │ │
+                    │ │  (InnoDB)   │ │
+                    │ ├─────────────┤ │
+                    │ │workers table│ │
+                    │ │ (PID store) │ │
+                    │ ├─────────────┤ │
+                    │ │config table │ │
+                    │ └─────────────┘ │
+                    └─────────────────┘
+```
+
+### Job Lifecycle & State Machine
+
+```
+                       ┌──────────┐
+                       │  enqueue │
+                       └────┬─────┘
+                            │
+                            ▼
+                       ┌─────────┐
+               ┌──────▶│ pending │◀─────────────────────┐
+               │       └────┬────┘                      │
+               │            │ claimNextJob()             │
+               │            │ (SELECT FOR UPDATE)        │ dlq retry <id>
+               │            ▼                            │ (attempts reset)
+               │       ┌────────────┐                   │
+               │       │ processing │                   │
+               │       └─────┬──────┘                   │
+               │             │                          │
+               │      ┌──────┴──────┐                  │
+               │      │             │                  │
+               │      ▼             ▼                  │
+               │  ┌──────────┐  ┌────────┐            │
+               │  │completed │  │ failed │            │
+               │  └──────────┘  └───┬────┘            │
+               │                    │                  │
+               │       attempts < max_retries          │
+               └────────────────────┘ (exponential     │
+                                        backoff)       │
+                                    │                  │
+                         attempts == max_retries       │
+                                    │                  │
+                                    ▼                  │
+                               ┌──────┐                │
+                               │ dead │────────────────┘
+                               │(DLQ) │
+                               └──────┘
+```
+
+### Core Components
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| **CLI Entrypoint** | [`bin/queuectl.js`](file:///Users/prashhh/Desktop/flam%20assignment/bin/queuectl.js) | Executable entry; delegates to CLI parser |
+| **CLI Commands** | [`src/cli.js`](file:///Users/prashhh/Desktop/flam%20assignment/src/cli.js) | Commander.js command definitions: `enqueue`, `worker`, `list`, `status`, `dlq`, `config` |
+| **Database Layer** | [`src/db.js`](file:///Users/prashhh/Desktop/flam%20assignment/src/db.js) | MySQL connection pool, table initialization, atomic job claiming (`SELECT ... FOR UPDATE`), crash recovery |
+| **Worker Child** | [`src/worker-child.js`](file:///Users/prashhh/Desktop/flam%20assignment/src/worker-child.js) | Single worker execution loop: polls jobs, executes shell commands, handles retries, registers PID, listens for `SIGTERM` |
+| **Worker Manager** | [`src/worker-manager.js`](file:///Users/prashhh/Desktop/flam%20assignment/src/worker-manager.js) | Spawns/manages N worker child processes, forwards `SIGTERM`/`SIGINT`, issues `worker stop` via PID lookup |
+
+### Key Design Decisions
+
+#### 1. Atomic Job Claiming — `SELECT ... FOR UPDATE SKIP LOCKED`
+Multiple workers race to claim the next job. InnoDB row-level locking inside a transaction ensures only one worker wins per job row, completely eliminating duplicate execution across all OS processes.
+
+#### 2. SIGKILL Crash Recovery (≤31s)
+Each worker runs `recoverStaleJobs(30)` at the top of every poll cycle. Any job stuck in `processing` for >30 seconds is reset to `pending`, ensuring crashed workers don't strand jobs. Worst-case recovery: **31 seconds** (30s threshold + 1s poll interval).
+
+#### 3. Exponential Backoff Formula
+```
+next_run_at = NOW() + (backoff_base ^ attempts) seconds
+```
+Default `backoff_base = 2`, so delays are 2s, 4s, 8s, 16s… between retries.
+
+#### 4. Cross-Process `worker stop` — DB PID Registry + OS Signals
+Workers write their OS PIDs to the `workers` MySQL table on startup. `worker stop` reads those PIDs and sends `SIGTERM`, which workers catch to finish in-flight jobs before exiting cleanly. This avoids polling overhead and socket complexity.
+
+#### 5. MySQL as Single Source of Truth
+All state (job status, worker PIDs, configuration) lives in MySQL. This means:
+- Workers are stateless and horizontally scalable
+- No separate coordination service (Redis, etcd) needed
+- Crash recovery is inherently durable (no in-memory state lost)
+
+---
+
 ## 📁 Repository Structure
 
 ```
